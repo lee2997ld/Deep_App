@@ -2,6 +2,7 @@ import React from 'react';
 import { createStackNavigator } from '@react-navigation/stack';
 import { NavigationContainer } from '@react-navigation/native';
 import { BottomTabNavigator } from './BottomTabNavigator';
+import ResultScreen from '../screens/ResultScreen';
 
 // 다른 화면들 import...
 
@@ -21,6 +22,20 @@ export function MainNavigator() {
         />
         
         {/* 탭 내비게이션 외부에서 접근할 화면들 */}
+        <Stack.Screen 
+          name="Result" 
+          component={ResultScreen} 
+          options={{ 
+            title: '분석 결과',
+            headerStyle: {
+              backgroundColor: '#FFA500',
+            },
+            headerTintColor: '#fff',
+            headerTitleStyle: {
+              fontWeight: 'bold',
+            },
+          }}
+        />
       </Stack.Navigator>
     </NavigationContainer>
   );
