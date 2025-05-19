@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   StyleSheet, 
   Text, 
@@ -7,12 +7,34 @@ import {
   TouchableOpacity, 
   ScrollView, 
   SafeAreaView,
-  Alert // Alert 추가
+  Alert,
+  FlatList,
+  Dimensions,
+  Platform
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
+const { height } = Dimensions.get('window');
+
 const ResultScreen = ({ route, navigation }) => {
-  const { imageUri, vegetableName, confidence } = route.params;
+  // 다중 이미지 결과 확인
+  const { isMultiple, multipleResults, imageUri, vegetableName, confidence } = route.params || {};
+  
+  // 현재 선택된 결과 (다중 이미지 모드에서 사용)
+  const [selectedResult, setSelectedResult] = useState(
+    isMultiple && multipleResults && multipleResults.length > 0 ? {...multipleResults[0]} : null
+  );
+  
+  // 웹 환경에서 스크롤 문제 해결을 위한 효과
+  useEffect(() => {
+    if (Platform.OS === 'web') {
+      // 웹 환경에서 스크롤 문제 해결을 위한 스타일 적용
+      document.body.style.overflow = 'auto';
+      return () => {
+        document.body.style.overflow = '';
+      };
+    }
+  }, []);
   
   // 식재료별 정보 (한글명으로 매핑)
   const foodInfo = {
@@ -146,12 +168,25 @@ const ResultScreen = ({ route, navigation }) => {
     tips: '정보 없음'
   };
   
+  // 현재 표시할 데이터 결정
+  const currentData = isMultiple && selectedResult 
+    ? {
+        imageUri: selectedResult.imageUri,
+        vegetableName: selectedResult.vegetableName,
+        confidence: selectedResult.confidence
+      }
+    : {
+        imageUri: imageUri,
+        vegetableName: vegetableName,
+        confidence: confidence
+      };
+  
   // 현재 식재료의 정보 가져오기
-  const info = foodInfo[vegetableName] || defaultInfo;
+  const info = foodInfo[currentData.vegetableName] || defaultInfo;
   
   // 신뢰도 계산 (오류 수정: NaN 방지)
-  const confidencePercent = confidence && !isNaN(confidence) 
-    ? (confidence * 100).toFixed(2) 
+  const confidencePercent = currentData.confidence && !isNaN(currentData.confidence) 
+    ? (currentData.confidence * 100).toFixed(2) 
     : "0.00";
   
   // 추천 요리 정보 추가
@@ -182,7 +217,7 @@ const ResultScreen = ({ route, navigation }) => {
     return dishMap[ingredient] || ['정보 없음'];
   };
   
-  const recommendedDishes = getRecommendedDishes(vegetableName);
+  const recommendedDishes = getRecommendedDishes(currentData.vegetableName);
   
   // 관련 식재료 추천 (함께 사용하면 좋은 재료)
   const getRelatedIngredients = (ingredient) => {
@@ -212,33 +247,67 @@ const ResultScreen = ({ route, navigation }) => {
     return relatedMap[ingredient] || ['정보 없음'];
   };
   
-  const relatedIngredients = getRelatedIngredients(vegetableName);
-  
-  // route.params 안전하게 처리 (params가 없는 경우 대비)
-  const safeParams = route.params || {};
+  const relatedIngredients = getRelatedIngredients(currentData.vegetableName);
   
   return (
     <SafeAreaView style={styles.safeAreaContainer}>
-      <ScrollView style={styles.container}>
-        {/* 헤더 영역 */}
-        <View style={styles.header}>
-          <TouchableOpacity 
-            style={styles.backButton} 
-            onPress={() => navigation.goBack()}
-          >
-            <Ionicons name="arrow-back" size={24} color="#333" />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>식재료 분석 결과</Text>
-          <View style={styles.headerRight} />
-        </View>
+      {/* 헤더 영역 */}
+      <View style={styles.header}>
+        <Text style={styles.headerTitle}>식재료 분석 결과</Text>
+        <View style={styles.headerRight} />
+      </View>
+      
+      {/* 스크롤 문제 해결을 위해 수정된 부분 */}
+      <ScrollView 
+        style={styles.content}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={true}
+        nestedScrollEnabled={true}
+      >
+        {isMultiple && multipleResults && multipleResults.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>
+              {multipleResults.length}개의 이미지 분석 결과
+            </Text>
+            {/* FlatList를 사용할 때 웹에서는 스크롤 비활성화 */}
+            <FlatList
+              horizontal
+              scrollEnabled={Platform.OS !== 'web'}
+              data={multipleResults}
+              keyExtractor={(item, index) => `result-${index}`}
+              renderItem={({ item, index }) => (
+                <TouchableOpacity
+                  style={[
+                    styles.resultThumbnailContainer, 
+                    selectedResult && selectedResult.imageUri === item.imageUri ? 
+                      styles.selectedThumbnailContainer : null
+                  ]}
+                  onPress={() => setSelectedResult(item)}
+                >
+                  <Image 
+                    source={{ uri: item.imageUri }} 
+                    style={styles.resultThumbnail}
+                    resizeMode="cover"
+                  />
+                  <Text style={styles.resultThumbnailText} numberOfLines={1}>
+                    {item.vegetableName || "알 수 없음"}
+                  </Text>
+                </TouchableOpacity>
+              )}
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.thumbnailsContainer}
+            />
+          </View>
+        )}
         
         {/* 이미지 컨테이너 */}
-        <View style={styles.imageContainer}>
-          {imageUri ? (
+        <View style={styles.section}>
+          {currentData.imageUri ? (
             <Image 
-              source={{ uri: imageUri }} 
+              source={{ uri: currentData.imageUri }} 
               style={styles.image}
               resizeMode="cover"
+              progressiveRenderingEnabled={true}
             />
           ) : (
             <View style={styles.noImageContainer}>
@@ -249,9 +318,9 @@ const ResultScreen = ({ route, navigation }) => {
         </View>
         
         {/* 결과 컨테이너 */}
-        <View style={styles.resultContainer}>
+        <View style={styles.section}>
           <View style={styles.resultHeader}>
-            <Text style={styles.vegetableName}>{vegetableName || "알 수 없음"}</Text>
+            <Text style={styles.vegetableName}>{currentData.vegetableName || "알 수 없음"}</Text>
             <Text style={styles.confidence}>
               신뢰도: {confidencePercent}%
             </Text>
@@ -259,51 +328,51 @@ const ResultScreen = ({ route, navigation }) => {
           
           {/* 영양 정보 */}
           <View style={styles.infoContainer}>
-            <Text style={styles.infoTitle}>영양 정보</Text>
+            <Text style={styles.sectionTitle}>영양 정보</Text>
             
-            <View style={styles.infoRow}>
+            <View style={styles.settingItem}>
               <Text style={styles.infoLabel}>칼로리:</Text>
               <Text style={styles.infoValue}>{info.calories}</Text>
             </View>
             
-            <View style={styles.infoRow}>
+            <View style={styles.settingItem}>
               <Text style={styles.infoLabel}>영양소:</Text>
               <Text style={styles.infoValue}>{info.nutrients}</Text>
             </View>
             
-            <View style={styles.infoRow}>
+            <View style={styles.settingItem}>
               <Text style={styles.infoLabel}>효능:</Text>
               <Text style={styles.infoValue}>{info.benefits}</Text>
             </View>
             
-            <View style={styles.infoRow}>
+            <View style={styles.settingItem}>
               <Text style={styles.infoLabel}>보관 팁:</Text>
               <Text style={styles.infoValue}>{info.tips}</Text>
             </View>
           </View>
-          
-          {/* 추천 요리 정보 */}
-          <View style={styles.infoContainer}>
-            <Text style={styles.infoTitle}>추천 요리</Text>
-            <View style={styles.recommendedDishes}>
-              {recommendedDishes.map((dish, index) => (
-                <View key={index} style={styles.dishTag}>
-                  <Text style={styles.dishText}>{dish}</Text>
-                </View>
-              ))}
-            </View>
+        </View>
+        
+        {/* 추천 요리 정보 */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>추천 요리</Text>
+          <View style={styles.recommendedDishes}>
+            {recommendedDishes.map((dish, index) => (
+              <View key={index} style={styles.dishTag}>
+                <Text style={styles.dishText}>{dish}</Text>
+              </View>
+            ))}
           </View>
-          
-          {/* 관련 식재료 */}
-          <View style={styles.infoContainer}>
-            <Text style={styles.infoTitle}>함께 사용하면 좋은 재료</Text>
-            <View style={styles.relatedIngredients}>
-              {relatedIngredients.map((ingredient, index) => (
-                <View key={index} style={styles.ingredientTag}>
-                  <Text style={styles.ingredientText}>{ingredient}</Text>
-                </View>
-              ))}
-            </View>
+        </View>
+        
+        {/* 관련 식재료 */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>함께 사용하면 좋은 재료</Text>
+          <View style={styles.relatedIngredients}>
+            {relatedIngredients.map((ingredient, index) => (
+              <View key={index} style={styles.ingredientTag}>
+                <Text style={styles.ingredientText}>{ingredient}</Text>
+              </View>
+            ))}
           </View>
         </View>
         
@@ -320,8 +389,7 @@ const ResultScreen = ({ route, navigation }) => {
           style={styles.recipeButton}
           onPress={() => {
             // 레시피 검색 기능 구현
-            // 향후 레시피 화면으로 이동할 수 있음
-            Alert.alert('알림', `${vegetableName || '선택한 식재료'} 레시피를 검색합니다.`);
+            Alert.alert('알림', `${currentData.vegetableName || '선택한 식재료'} 레시피를 검색합니다.`);
           }}
         >
           <Ionicons name="search-outline" size={20} color="#fff" style={styles.buttonIcon} />
@@ -336,21 +404,17 @@ const styles = StyleSheet.create({
   safeAreaContainer: {
     flex: 1,
     backgroundColor: '#f5f5f5',
-  },
-  container: {
-    flex: 1,
-    backgroundColor: '#f5f5f5',
-    padding: 20,
+    height: Platform.OS === 'web' ? '100vh' : null,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 20,
-    paddingVertical: 10,
-  },
-  backButton: {
-    padding: 8,
+    paddingVertical: 15,
+    paddingHorizontal: 20,
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
   },
   headerTitle: {
     fontSize: 18,
@@ -360,44 +424,84 @@ const styles = StyleSheet.create({
   headerRight: {
     width: 40,
   },
-  imageContainer: {
+  content: {
+    flex: 1,
     width: '100%',
-    height: 250,
-    borderRadius: 15,
-    overflow: 'hidden',
-    marginBottom: 20,
+  },
+  scrollContent: {
+    flexGrow: 1,
+    paddingBottom: 40,
+  },
+  section: {
     backgroundColor: '#fff',
-    elevation: 5,
+    marginTop: 16,
+    paddingHorizontal: 20,
+    paddingVertical: 15,
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: '#eee',
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#4CAF50',
+    marginBottom: 10,
+  },
+  settingItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  multipleResultsContainer: {
+    marginBottom: 20,
+  },
+  thumbnailsContainer: {
+    paddingVertical: 10,
+  },
+  resultThumbnailContainer: {
+    width: 100,
+    marginRight: 10,
+    borderRadius: 10,
+    overflow: 'hidden',
+    backgroundColor: '#fff',
+    elevation: 2,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 1.41,
+  },
+  selectedThumbnailContainer: {
+    borderWidth: 2,
+    borderColor: '#4CAF50',
+  },
+  resultThumbnail: {
+    width: '100%',
+    height: 80,
+  },
+  resultThumbnailText: {
+    textAlign: 'center',
+    padding: 5,
+    fontSize: 12,
   },
   image: {
     width: '100%',
-    height: '100%',
+    height: 250,
+    borderRadius: 15,
   },
   noImageContainer: {
     width: '100%',
-    height: '100%',
+    height: 250,
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: '#f9f9f9',
+    borderRadius: 15,
   },
   noImageText: {
     marginTop: 10,
     color: '#999',
-  },
-  resultContainer: {
-    backgroundColor: '#fff',
-    borderRadius: 15,
-    padding: 20,
-    marginBottom: 20,
-    elevation: 5,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
   },
   resultHeader: {
     marginBottom: 15,
@@ -416,35 +520,23 @@ const styles = StyleSheet.create({
     color: '#757575',
   },
   infoContainer: {
-    marginTop: 20,
-    marginBottom: 10,
-  },
-  infoTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginBottom: 15,
-    color: '#333',
-  },
-  infoRow: {
-    flexDirection: 'row',
-    marginBottom: 12,
+    marginTop: 10,
   },
   infoLabel: {
     fontSize: 16,
     fontWeight: 'bold',
-    width: 80,
     color: '#555',
   },
   infoValue: {
     fontSize: 16,
-    flex: 1,
     color: '#333',
-    lineHeight: 22,
+    textAlign: 'right',
+    flex: 1,
   },
   recommendedDishes: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    marginBottom: 10,
+    marginTop: 5,
   },
   dishTag: {
     backgroundColor: '#E8F5E9',
@@ -461,7 +553,7 @@ const styles = StyleSheet.create({
   relatedIngredients: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    marginBottom: 10,
+    marginTop: 5,
   },
   ingredientTag: {
     backgroundColor: '#E3F2FD',
@@ -485,6 +577,8 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.22,
     shadowRadius: 2.22,
+    marginHorizontal: 20,
+    marginTop: 20,
     marginBottom: 15,
   },
   recipeButton: {
@@ -499,7 +593,8 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.22,
     shadowRadius: 2.22,
-    marginBottom: 20,
+    marginHorizontal: 20,
+    marginBottom: 30,
   },
   buttonText: {
     color: 'white',

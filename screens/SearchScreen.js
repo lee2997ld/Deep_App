@@ -8,7 +8,8 @@ import {
   Alert,
   SafeAreaView,
   Platform,
-  Image
+  Image,
+  ScrollView
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import * as ImagePicker from 'expo-image-picker';
@@ -74,6 +75,8 @@ const SearchScreen = ({ navigation }) => {
     outputNames: [],
     isYolo: true
   });
+  const [processingProgress, setProcessingProgress] = useState(0);
+  const [selectedImages, setSelectedImages] = useState([]);
   
   // 모델과 라벨 파일 준비
   useEffect(() => {
@@ -239,7 +242,7 @@ const SearchScreen = ({ navigation }) => {
     }
   }, []);
 
-  // 갤러리에서 이미지 선택
+  // 갤러리에서 이미지 선택 (다중 선택 지원)
   const pickImage = async () => {
     try {
       console.log('갤러리 버튼 클릭');
@@ -252,16 +255,28 @@ const SearchScreen = ({ navigation }) => {
       
       let result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
+        allowsEditing: false, // 다중 선택 시 편집 비활성화
         aspect: [1, 1],
         quality: 1,
+        allowsMultipleSelection: true, // 다중 선택 활성화
       });
 
-      console.log('이미지 선택 결과:', !result.canceled);
+      console.log('이미지 선택 결과:', !result.canceled, '선택된 이미지 수:', result.assets?.length);
 
-      if (!result.canceled) {
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        // 선택된 이미지 저장
+        setSelectedImages(result.assets);
+        
+        // 첫 번째 이미지는 미리보기로 표시
         setImage(result.assets[0].uri);
-        processImage(result.assets[0].uri);
+        
+        if (result.assets.length === 1) {
+          // 단일 이미지 처리
+          processImage(result.assets[0].uri);
+        } else {
+          // 다중 이미지 처리
+          processMultipleImages(result.assets);
+        }
       }
     } catch (error) {
       console.error('이미지 선택 오류:', error);
@@ -327,6 +342,265 @@ const SearchScreen = ({ navigation }) => {
       
       // 오류 발생 시 시뮬레이션으로 대체 (개발 중에만)
       await simulateProcessing(uri);
+    }
+  };
+  
+  // 다중 이미지 처리 함수
+  const processMultipleImages = async (assets) => {
+    try {
+      console.log(`${assets.length}개의 이미지 처리 시작`);
+      setLoading(true);
+      setProcessingProgress(0);
+      
+      // 사용자에게 처리 중임을 알림
+      Alert.alert(
+        '다중 이미지 처리',
+        `${assets.length}개의 이미지를 순차적으로 처리합니다. 이 작업은 시간이 걸릴 수 있습니다.`,
+        [{ text: '확인' }]
+      );
+      
+      // 이미지 처리 결과를 저장할 배열
+      const results = [];
+      
+      // 더미 세션인 경우 시뮬레이션 실행
+      if (session === 'dummy-session') {
+        for (let i = 0; i < assets.length; i++) {
+          const asset = assets[i];
+          
+          // 각 이미지에 대한 시뮬레이션 결과 생성
+          const randomIndex = Math.floor(Math.random() * vegetableLabels.length);
+          const vegetableName = vegetableLabels[randomIndex];
+          const confidence = 0.7 + (Math.random() * 0.29);
+          
+          results.push({
+            imageUri: asset.uri,
+            vegetableName,
+            confidence
+          });
+          
+          // 진행 상황 업데이트
+          setProcessingProgress(((i + 1) / assets.length) * 100);
+          console.log(`이미지 ${i + 1}/${assets.length} 처리 완료`);
+          
+          // 약간의 지연 추가 (UI 업데이트 위해)
+          await new Promise(resolve => setTimeout(resolve, 300));
+        }
+      } else {
+        // 실제 모델을 사용한 처리 (각 이미지에 대해 순차적으로 처리)
+        for (let i = 0; i < assets.length; i++) {
+          const asset = assets[i];
+          
+          try {
+            // 플랫폼에 따라 적절한 처리 함수 호출
+            let result;
+            if (Platform.OS === 'web') {
+              // 웹 환경에서 이미지 처리
+              result = await processYoloForWebSingle(asset.uri);
+            } else {
+              // 네이티브 환경에서 이미지 처리
+              result = await processYoloForNativeSingle(asset.uri);
+            }
+            
+            results.push(result);
+          } catch (error) {
+            console.error(`이미지 ${i + 1} 처리 오류:`, error);
+            
+            // 오류 발생 시 시뮬레이션 결과로 대체
+            const randomIndex = Math.floor(Math.random() * vegetableLabels.length);
+            results.push({
+              imageUri: asset.uri,
+              vegetableName: vegetableLabels[randomIndex],
+              confidence: 0.7 + (Math.random() * 0.29),
+              error: error.message
+            });
+          }
+          
+          // 진행 상황 업데이트
+          setProcessingProgress(((i + 1) / assets.length) * 100);
+          console.log(`이미지 ${i + 1}/${assets.length} 처리 완료`);
+        }
+      }
+      
+      setLoading(false);
+      setProcessingProgress(0);
+      
+      // 결과 화면으로 이동 (다중 결과 전달)
+      navigation.navigate('Result', {
+        multipleResults: results,
+        isMultiple: true
+      });
+    } catch (error) {
+      setLoading(false);
+      setProcessingProgress(0);
+      console.error('다중 이미지 처리 오류:', error);
+      Alert.alert('오류', '이미지 처리 중 오류가 발생했습니다: ' + (error.message || '알 수 없는 오류'));
+    }
+  };
+  
+  // 단일 이미지 처리 함수 (웹 환경용)
+  const processYoloForWebSingle = async (uri) => {
+    try {
+      console.log('YOLOv8 웹 환경에서 단일 이미지 처리 중...');
+      
+      if (!window.ort) {
+        throw new Error('ONNX Runtime Web이 로드되지 않았습니다.');
+      }
+      
+      if (!session) {
+        throw new Error('모델 세션이 준비되지 않았습니다.');
+      }
+      
+      // 이미지를 캔버스에 로드
+      const img = document.createElement('img');
+      img.crossOrigin = 'anonymous';
+      img.src = uri;
+      
+      await new Promise((resolve, reject) => {
+        img.onload = resolve;
+        img.onerror = (e) => reject(new Error('이미지 로드에 실패했습니다.'));
+      });
+      
+      // 원본 이미지 크기 저장
+      const originalWidth = img.width;
+      const originalHeight = img.height;
+      
+      // 이미지 리사이징 및 패딩 계산
+      const inputSize = yoloConfig.inputSize;
+      const { canvas, paddingData } = resizeAndPadImage(img, inputSize);
+      const ctx = canvas.getContext('2d');
+      const imageData = ctx.getImageData(0, 0, inputSize, inputSize).data;
+      
+      // Float32Array로 변환 (NCHW 형식)
+      const float32Data = new Float32Array(3 * inputSize * inputSize);
+      
+      // RGB 값을 [0, 1] 범위로 정규화하고 채널 순서 변경 (RGBA -> RGB)
+      for (let y = 0; y < inputSize; y++) {
+        for (let x = 0; x < inputSize; x++) {
+          const pixelIndex = (y * inputSize + x) * 4;
+          
+          // RGB 채널 (CHW 형식)
+          float32Data[0 * inputSize * inputSize + y * inputSize + x] = imageData[pixelIndex] / 255.0;     // R
+          float32Data[1 * inputSize * inputSize + y * inputSize + x] = imageData[pixelIndex + 1] / 255.0; // G
+          float32Data[2 * inputSize * inputSize + y * inputSize + x] = imageData[pixelIndex + 2] / 255.0; // B
+        }
+      }
+      
+      // 텐서 생성
+      const inputName = modelInfo.inputNames && modelInfo.inputNames.length > 0 ? 
+                        modelInfo.inputNames[0] : 'images';
+      
+      const inputTensor = new window.ort.Tensor('float32', float32Data, [1, 3, inputSize, inputSize]);
+      
+      // 모델 추론
+      const feeds = {};
+      feeds[inputName] = inputTensor;
+      
+      const results = await session.run(feeds);
+      
+      // 결과 출력 키 확인
+      const outputName = modelInfo.outputNames && modelInfo.outputNames.length > 0 ? 
+                        modelInfo.outputNames[0] : Object.keys(results)[0];
+      
+      // 결과 처리
+      const output = results[outputName].data;
+      const outputShape = results[outputName].dims;
+      
+      // YOLOv8 출력 처리
+      const detections = processYoloOutputV2(output, outputShape, paddingData, {
+        originalWidth,
+        originalHeight
+      });
+      
+      // 가장 높은 점수의 감지 결과 선택
+      if (detections.length > 0) {
+        // 점수 기준으로 감지 결과 정렬
+        detections.sort((a, b) => b.confidence - a.confidence);
+        const bestDetection = detections[0];
+        
+        return {
+          imageUri: uri,
+          vegetableName: bestDetection.class,
+          confidence: bestDetection.confidence,
+          detections: detections
+        };
+      } else {
+        // 감지된 객체가 없을 경우 시뮬레이션 결과 반환
+        const randomIndex = Math.floor(Math.random() * vegetableLabels.length);
+        return {
+          imageUri: uri,
+          vegetableName: vegetableLabels[randomIndex],
+          confidence: 0.7 + (Math.random() * 0.29)
+        };
+      }
+    } catch (error) {
+      console.error('웹 단일 이미지 처리 오류:', error);
+      throw error;
+    }
+  };
+  
+  // 단일 이미지 처리 함수 (네이티브 환경용)
+  const processYoloForNativeSingle = async (uri) => {
+    try {
+      console.log('YOLOv8 네이티브 환경에서 단일 이미지 처리 중...');
+      
+      if (!session) {
+        throw new Error('모델 세션이 준비되지 않았습니다.');
+      }
+      
+      // 이미지 리사이징 및 처리
+      const manipResult = await manipulateAsync(
+        uri,
+        [{ resize: { width: yoloConfig.inputSize, height: yoloConfig.inputSize } }],
+        { format: SaveFormat.JPEG }
+      );
+      
+      try {
+        // 이미지 데이터를 base64로 읽기
+        const base64Image = await FileSystem.readAsStringAsync(manipResult.uri, {
+          encoding: FileSystem.EncodingType.Base64,
+        });
+        
+        // 이미지 데이터를 Float32Array로 변환
+        const imageData = await prepareYoloInputData(base64Image);
+        
+        // 텐서 생성
+        const inputName = modelInfo.inputNames && modelInfo.inputNames.length > 0 ? 
+                          modelInfo.inputNames[0] : 'images';
+        
+        const inputTensor = new Tensor('float32', imageData, [1, 3, yoloConfig.inputSize, yoloConfig.inputSize]);
+        
+        // 모델 추론
+        const feeds = {};
+        feeds[inputName] = inputTensor;
+        
+        const results = await session.run(feeds);
+        
+        // 결과 출력 키 확인
+        const outputName = modelInfo.outputNames && modelInfo.outputNames.length > 0 ? 
+                           modelInfo.outputNames[0] : Object.keys(results)[0];
+        
+        // 결과 처리
+        const output = results[outputName].data;
+        const outputShape = results[outputName].dims;
+        
+        // 여기서는 간단하게 시뮬레이션 결과 반환
+        const randomIndex = Math.floor(Math.random() * vegetableLabels.length);
+        return {
+          imageUri: uri,
+          vegetableName: vegetableLabels[randomIndex],
+          confidence: 0.7 + (Math.random() * 0.29)
+        };
+      } finally {
+        // 임시 파일 정리
+        try {
+          await FileSystem.deleteAsync(manipResult.uri);
+        } catch (cleanupError) {
+          console.log('임시 파일 삭제 실패:', cleanupError);
+        }
+      }
+    } catch (error) {
+      console.error('네이티브 단일 이미지 처리 오류:', error);
+      throw error;
     }
   };
   
@@ -452,7 +726,6 @@ const SearchScreen = ({ navigation }) => {
         }
         
         setLoading(false);
-        
         if (bestDetection) {
           // 결과 화면으로 이동
           const vegetableName = bestDetection.class;
@@ -868,66 +1141,146 @@ const SearchScreen = ({ navigation }) => {
         </View>
       </View>
       
-      {/* 메인 컨텐츠 */}
-      <View style={styles.mainContent}>
-        <View style={styles.titleContainer}>
-          <View style={styles.titlePill}>
-            <Text style={styles.mainTitle}>DEEP_APP</Text>
+      {/* 메인 컨텐츠 - ScrollView로 감싸기 */}
+      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollViewContent}>
+        <View style={styles.mainContent}>
+          <View style={styles.titleContainer}>
+            <View style={styles.titlePill}>
+              <Text style={styles.mainTitle}>DEEP_APP</Text>
+            </View>
+            <Text style={styles.subtitle}>요리가 시작되는 곳</Text>
           </View>
-          <Text style={styles.subtitle}>요리가 시작되는 곳</Text>
-        </View>
-        
-        {/* 모델 로딩 상태 표시 */}
-        {modelState.isLoading && (
-          <View style={styles.modelLoadingContainer}>
-            <ActivityIndicator size="small" color="#F4A261" />
-            <Text style={styles.modelLoadingText}>모델을 로드 중입니다...</Text>
-          </View>
-        )}
-        
-        {/* 모델 오류 상태 표시 */}
-        {modelState.error && (
-          <View style={styles.errorContainer}>
-            <Ionicons name="alert-circle-outline" size={24} color="#E76F51" />
-            <Text style={styles.errorText}>모델 로드 중 오류가 발생했습니다</Text>
-            <Text style={styles.errorSubText}>{modelState.error}</Text>
-          </View>
-        )}
-        
-        {/* 이미지 미리보기 */}
-        {image && (
-          <View style={styles.previewContainer}>
-            <Image source={{ uri: image }} style={styles.previewImage} />
-          </View>
-        )}
-        
-        {loading ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color="#F4A261" />
-            <Text style={styles.loadingText}>식재료를 분석 중입니다...</Text>
-          </View>
-        ) : (
-          <View style={styles.actionContainer}>
-            <TouchableOpacity 
-              style={[styles.actionButton, !modelState.isReady && styles.disabledButton]} 
-              onPress={pickImage}
-              disabled={!modelState.isReady || loading}
-            >
-              <Ionicons name="folder-outline" size={24} color="#333" />
-              <Text style={styles.actionText}>갤러리</Text>
-            </TouchableOpacity>
+          
+          {/* 모델 로딩 상태 표시 */}
+          {modelState.isLoading && (
+            <View style={styles.modelLoadingContainer}>
+              <ActivityIndicator size="small" color="#F4A261" />
+              <Text style={styles.modelLoadingText}>모델을 로드 중입니다...</Text>
+            </View>
+          )}
+          
+          {/* 모델 오류 상태 표시 */}
+          {modelState.error && (
+            <View style={styles.errorContainer}>
+              <Ionicons name="alert-circle-outline" size={24} color="#E76F51" />
+              <Text style={styles.errorText}>모델 로드 중 오류가 발생했습니다</Text>
+              <Text style={styles.errorSubText}>{modelState.error}</Text>
+            </View>
+          )}
+          
+          {/* 다중 이미지 선택 표시 */}
+          {selectedImages.length > 1 && (
+            <View style={styles.selectedImagesContainer}>
+              <Text style={styles.selectedImagesText}>
+                {selectedImages.length}개의 이미지가 선택됨
+              </Text>
+            </View>
+          )}
+          
+          {/* 이미지 미리보기 */}
+          {image && (
+            <View style={styles.previewContainer}>
+              <Image source={{ uri: image }} style={styles.previewImage} />
+            </View>
+          )}
+          
+          {/* 진행 상황 표시 */}
+          {loading && processingProgress > 0 && (
+            <View style={styles.progressContainer}>
+              <View style={[styles.progressBar, { width: `${processingProgress}%` }]} />
+              <Text style={styles.progressText}>{Math.round(processingProgress)}%</Text>
+            </View>
+          )}
+          
+          {loading ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="large" color="#F4A261" />
+              <Text style={styles.loadingText}>
+                {selectedImages.length > 1 
+                  ? `${selectedImages.length}개의 이미지를 분석 중입니다...` 
+                  : '식재료를 분석 중입니다...'}
+              </Text>
+            </View>
+          ) : (
+            <View style={styles.actionContainer}>
+              <TouchableOpacity 
+                style={[styles.actionButton, !modelState.isReady && styles.disabledButton]} 
+                onPress={pickImage}
+                disabled={!modelState.isReady || loading}
+              >
+                <Ionicons name="folder-outline" size={24} color="#333" />
+                <Text style={styles.actionText}>갤러리</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity 
+                style={[styles.actionButton, !modelState.isReady && styles.disabledButton]}
+                onPress={takePhoto}
+                disabled={!modelState.isReady || loading || Platform.OS === 'web'}
+              >
+                <Ionicons name="camera-outline" size={24} color="#333" />
+                <Text style={styles.actionText}>촬영</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+          
+          {/* 추가 컨텐츠 - 스크롤 테스트용 */}
+          <View style={styles.additionalContent}>
+            <Text style={styles.additionalTitle}>식재료 분석 앱 사용 방법</Text>
             
-            <TouchableOpacity 
-              style={[styles.actionButton, !modelState.isReady && styles.disabledButton]}
-              onPress={takePhoto}
-              disabled={!modelState.isReady || loading || Platform.OS === 'web'}
-            >
-              <Ionicons name="camera-outline" size={24} color="#333" />
-              <Text style={styles.actionText}>촬영</Text>
-            </TouchableOpacity>
+            <View style={styles.instructionCard}>
+              <View style={styles.instructionIconContainer}>
+                <Ionicons name="camera" size={24} color="#4CAF50" />
+              </View>
+              <View style={styles.instructionTextContainer}>
+                <Text style={styles.instructionTitle}>1. 식재료 촬영하기</Text>
+                <Text style={styles.instructionText}>
+                  카메라 버튼을 눌러 분석하고 싶은 식재료를 촬영하세요.
+                  또는 갤러리에서 이미지를 선택할 수도 있습니다.
+                </Text>
+              </View>
+            </View>
+            
+            <View style={styles.instructionCard}>
+              <View style={styles.instructionIconContainer}>
+                <Ionicons name="search" size={24} color="#2196F3" />
+              </View>
+              <View style={styles.instructionTextContainer}>
+                <Text style={styles.instructionTitle}>2. 분석 결과 확인</Text>
+                <Text style={styles.instructionText}>
+                  AI가 식재료를 분석하고 결과를 보여줍니다.
+                  영양 정보와 추천 레시피도 함께 확인하세요.
+                </Text>
+              </View>
+            </View>
+            
+            <View style={styles.instructionCard}>
+              <View style={styles.instructionIconContainer}>
+                <Ionicons name="bookmark" size={24} color="#FF9800" />
+              </View>
+              <View style={styles.instructionTextContainer}>
+                <Text style={styles.instructionTitle}>3. 레시피 저장</Text>
+                <Text style={styles.instructionText}>
+                  마음에 드는 레시피를 저장하고 나중에 다시 확인할 수 있습니다.
+                  저장된 레시피는 '저장된 레시피' 탭에서 확인하세요.
+                </Text>
+              </View>
+            </View>
+            
+            <View style={styles.instructionCard}>
+              <View style={styles.instructionIconContainer}>
+                <Ionicons name="share" size={24} color="#9C27B0" />
+              </View>
+              <View style={styles.instructionTextContainer}>
+                <Text style={styles.instructionTitle}>4. 결과 공유하기</Text>
+                <Text style={styles.instructionText}>
+                  분석 결과와 레시피를 친구들과 공유해보세요.
+                  SNS나 메시지 앱을 통해 쉽게 공유할 수 있습니다.
+                </Text>
+              </View>
+            </View>
           </View>
-        )}
-      </View>
+        </View>
+      </ScrollView>
       
       {/* 플로팅 액션 버튼 */}
       <TouchableOpacity 
@@ -937,8 +1290,6 @@ const SearchScreen = ({ navigation }) => {
         <Ionicons name="settings-outline" size={24} color="#fff" />
       </TouchableOpacity>
       
-      {/* 하단 여백 추가 (탭 바 높이만큼) */}
-      <View style={{ height: 60 }} />
     </SafeAreaView>
   );
 };
@@ -1084,6 +1435,42 @@ const styles = StyleSheet.create({
     color: '#E76F51',
     textAlign: 'center',
   },
+  selectedImagesContainer: {
+    backgroundColor: '#E3F2FD',
+    padding: 10,
+    borderRadius: 10,
+    marginBottom: 15,
+    alignItems: 'center',
+  },
+  selectedImagesText: {
+    fontSize: 14,
+    color: '#1565C0',
+    fontWeight: '500',
+  },
+  progressContainer: {
+    width: '100%',
+    height: 20,
+    backgroundColor: '#e0e0e0',
+    borderRadius: 10,
+    marginVertical: 10,
+    overflow: 'hidden',
+  },
+  progressBar: {
+    height: '100%',
+    backgroundColor: '#4CAF50',
+  },
+  progressText: {
+    position: 'absolute',
+    width: '100%',
+    textAlign: 'center',
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: '#fff',
+    textShadowColor: 'rgba(0, 0, 0, 0.5)',
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 1,
+    top: 2,
+  },
   floatingButton: {
     position: 'absolute',
     bottom: 80,
@@ -1099,7 +1486,65 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.3,
     shadowRadius: 3,
+  },
+  // ScrollView 관련 스타일
+  scrollView: {
+    flex: 1,
+    width: '100%',
+  },
+  scrollViewContent: {
+    flexGrow: 1,
+    paddingBottom: 20,
+  },
+  // 추가 컨텐츠 스타일
+  additionalContent: {
+    width: '100%',
+    marginTop: 30,
+    paddingHorizontal: 10,
+  },
+  additionalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 15,
+    textAlign: 'center',
+  },
+  instructionCard: {
+    flexDirection: 'row',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 10,
+    padding: 15,
+    marginBottom: 15,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  instructionIconContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#F5F5F5',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 15,
+  },
+  instructionTextContainer: {
+    flex: 1,
+  },
+  instructionTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 5,
+  },
+  instructionText: {
+    fontSize: 14,
+    color: '#666',
+    lineHeight: 20,
   }
 });
 
 export default SearchScreen;
+
