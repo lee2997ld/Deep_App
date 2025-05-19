@@ -3,144 +3,88 @@ import {
   StyleSheet, 
   Text, 
   View, 
-  Image, 
   TouchableOpacity, 
-  ActivityIndicator,
-  Alert,
-  SafeAreaView
+  ScrollView,
+  SafeAreaView,
+  FlatList
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
-import * as ImagePicker from 'expo-image-picker';
-import { Camera } from 'expo-camera';
-import * as FileSystem from 'expo-file-system';
-import { Asset } from 'expo-asset';
-import { InferenceSession, Tensor } from 'onnxruntime-react-native';
-import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
+import { Ionicons } from '@expo/vector-icons';
 
 const HomeScreen = ({ navigation }) => {
-  const [image, setImage] = useState(null);
-  const [hasPermission, setHasPermission] = useState(null);
-  const [loading, setLoading] = useState(false);
-  
-  // 카메라 권한 요청
-  useEffect(() => {
-    (async () => {
-      const { status } = await Camera.requestCameraPermissionsAsync();
-      setHasPermission(status === 'granted');
-    })();
-  }, []);
-
-  // 갤러리에서 이미지 선택
-  const pickImage = async () => {
-    let result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 1,
-    });
-
-    if (!result.canceled) {
-      setImage(result.assets[0].uri);
-      processImage(result.assets[0].uri);
+  // 추천 요리 리스트
+  const recommendedRecipes = [
+    {
+      id: '1',
+      title: '김치찌개',
+      ingredients: '김치, 돼지고기, 두부, 파',
+      time: '30분',
+      difficulty: '쉬움',
+    },
+    {
+      id: '2',
+      title: '계란 볶음밥',
+      ingredients: '계란, 밥, 양파, 당근',
+      time: '15분',
+      difficulty: '쉬움',
+    },
+    {
+      id: '3',
+      title: '된장찌개',
+      ingredients: '된장, 두부, 감자, 양파, 파',
+      time: '25분',
+      difficulty: '쉬움',
+    },
+    {
+      id: '4',
+      title: '시금치 무침',
+      ingredients: '시금치, 마늘, 참기름',
+      time: '10분',
+      difficulty: '쉬움',
     }
-  };
+  ];
 
-  // 카메라로 사진 촬영
-  const takePhoto = async () => {
-    let result = await ImagePicker.launchCameraAsync({
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 1,
-    });
+  // 인기 식재료
+  const popularIngredients = [
+    { id: '1', name: '소고기', icon: 'nutrition-outline' },
+    { id: '2', name: '계란', icon: 'egg-outline' },
+    { id: '3', name: '양파', icon: 'leaf-outline' },
+    { id: '4', name: '김치', icon: 'restaurant-outline' },
+    { id: '5', name: '감자', icon: 'leaf-outline' }
+  ];
 
-    if (!result.canceled) {
-      setImage(result.assets[0].uri);
-      processImage(result.assets[0].uri);
-    }
-  };
+  // 레시피 아이템 렌더링
+  const renderRecipeItem = ({ item }) => (
+    <TouchableOpacity 
+      style={styles.recipeCard}
+      onPress={() => navigation.navigate('RecipeDetail', { recipeName: item.title })}
+    >
+      <View style={styles.recipePlaceholder}>
+        <Ionicons name="restaurant-outline" size={24} color="#ccc" />
+      </View>
+      <View style={styles.recipeInfo}>
+        <Text style={styles.recipeTitle}>{item.title}</Text>
+        <Text style={styles.recipeIngredients} numberOfLines={1}>{item.ingredients}</Text>
+        <View style={styles.recipeMetaInfo}>
+          <Text style={styles.recipeTime}>{item.time}</Text>
+          <Text style={styles.recipeDifficulty}>난이도: {item.difficulty}</Text>
+        </View>
+      </View>
+    </TouchableOpacity>
+  );
 
-  // 이미지 전처리 및 모델 추론
-  const processImage = async (uri) => {
-    try {
-      setLoading(true);
-      
-      // 이미지 리사이징 및 정규화
-      const manipResult = await manipulateAsync(
-        uri,
-        [{ resize: { width: 224, height: 224 } }],
-        { format: SaveFormat.JPEG }
-      );
-      
-      // 모델 로드
-      const modelAsset = await Asset.loadAsync(require('../assets/vegetable_classifier.onnx'));
-      const modelUri = modelAsset[0].localUri;
-      const session = await InferenceSession.create(modelUri);
-      
-      // 이미지를 텐서로 변환
-      const imageBase64 = await FileSystem.readAsStringAsync(manipResult.uri, {
-        encoding: FileSystem.EncodingType.Base64,
-      });
-      
-      // 이미지 데이터를 Float32Array로 변환 (실제 구현은 이미지 처리 라이브러리에 따라 다를 수 있음)
-      // 여기서는 간단한 예시만 제공
-      const imageData = await prepareImageData(imageBase64);
-      
-      // 모델 입력 텐서 생성
-      const inputTensor = new Tensor('float32', imageData, [1, 3, 224, 224]);
-      
-      // 모델 추론
-      const feeds = { 'input': inputTensor };
-      const results = await session.run(feeds);
-      
-      // 결과 처리
-      const output = results.output.data;
-      
-      // 채소 라벨 로드
-      const labelsAsset = await Asset.loadAsync(require('../assets/vegetable_labels.json'));
-      const labelsUri = labelsAsset[0].localUri;
-      const labelsJson = await FileSystem.readAsStringAsync(labelsUri);
-      const labels = JSON.parse(labelsJson);
-      
-      // 최대 확률 클래스 찾기
-      let maxIndex = 0;
-      let maxProb = output[0];
-      for (let i = 1; i < output.length; i++) {
-        if (output[i] > maxProb) {
-          maxProb = output[i];
-          maxIndex = i;
-        }
-      }
-      
-      const vegetableName = labels[maxIndex];
-      const confidence = maxProb;
-      
-      setLoading(false);
-      
-      // 결과 화면으로 이동
-      navigation.navigate('Result', {
-        imageUri: uri,
-        vegetableName,
-        confidence
-      });
-      
-    } catch (error) {
-      setLoading(false);
-      console.error(error);
-      Alert.alert('오류', '이미지 처리 중 오류가 발생했습니다.');
-    }
-  };
-  
-  // 이미지 데이터 준비 함수 (실제 구현은 이미지 처리 방식에 따라 다름)
-  const prepareImageData = async (base64Image) => {
-    // 이 부분은 실제 이미지 처리 로직으로 대체해야 함
-    // 예: RGB 이미지를 [0,1] 범위로 정규화하고 채널 순서 변경 등
-    
-    // 임시 예시 코드
-    const imageArray = new Float32Array(3 * 224 * 224);
-    // 이미지 처리 로직...
-    
-    return imageArray;
-  };
+  // 인기 식재료 아이템 렌더링
+  const renderIngredientItem = ({ item }) => (
+    <TouchableOpacity 
+      style={styles.ingredientItem}
+      onPress={() => navigation.navigate('Search')}
+    >
+      <View style={styles.ingredientIconContainer}>
+        <Ionicons name={item.icon} size={24} color="#FFA500" />
+      </View>
+      <Text style={styles.ingredientName}>{item.name}</Text>
+    </TouchableOpacity>
+  );
 
   return (
     <SafeAreaView style={styles.container}>
@@ -154,69 +98,57 @@ const HomeScreen = ({ navigation }) => {
           </View>
         </View>
         <View style={styles.headerIcons}>
-          <TouchableOpacity>
-            {/* <Image 
-              source={require('../assets/profile.png')} 
-              style={styles.iconImage} 
-            /> */}
+          <TouchableOpacity style={styles.iconButton}>
+            <Ionicons name="person-outline" size={24} color="#333" />
           </TouchableOpacity>
-          <TouchableOpacity>
-            {/* <Image 
-              source={require('../assets/menu.png')} 
-              style={styles.iconImage} 
-            /> */}
+          <TouchableOpacity style={styles.iconButton}>
+            <Ionicons name="menu-outline" size={24} color="#333" />
           </TouchableOpacity>
         </View>
       </View>
       
-      {/* 메인 카드 영역 */}
-      <View style={styles.mainCard}>
-        <Text style={styles.mainTitle}>쉽고 간편하게{'\n'}집에서 해먹는 집밥!</Text>
-        
-        <View style={styles.foodIconContainer}>
-          {image ? (
-            <Image source={{ uri: image }} style={styles.foodIcon} />
-          ) : (
-            <View style={styles.foodIcon}>
-              <Text style={styles.placeholderText}>식재료 촬영</Text>
-            </View>
-          )}
-        </View>
-        
-        <View style={styles.recommendationContainer}>
-          <Text style={styles.recommendationTitle}>오늘의 추천!</Text>
+      <ScrollView style={styles.content}>
+        {/* 메인 카드 영역 */}
+        <View style={styles.mainCard}>
+          <Text style={styles.mainTitle}>쉽고 간편하게{'\n'}집에서 해먹는 집밥!</Text>
           
-          <View style={styles.recommendationList}>
-            <Text style={styles.recommendationItem}>1. 한식의 대가느낌 김치찌개!</Text>
-            <Text style={styles.recommendationItem}>2. 중식 스타일 계란 볶음밥!</Text>
-            <Text style={styles.recommendationItem}>3. 항상 집에서 먹던 계란 장조림!</Text>
-            <Text style={styles.recommendationItem}>4. 재결 시금치로 만드는 시금치 무침!</Text>
+          <TouchableOpacity 
+            style={styles.searchButton}
+            onPress={() => navigation.navigate('Search')}
+          >
+            <Ionicons name="camera-outline" size={20} color="#333" />
+            <Text style={styles.searchButtonText}>식재료 인식하러 가기</Text>
+          </TouchableOpacity>
+        </View>
+        
+        {/* 인기 식재료 섹션 */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>인기 식재료</Text>
+          <FlatList
+            data={popularIngredients}
+            renderItem={renderIngredientItem}
+            keyExtractor={item => item.id}
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={styles.ingredientsList}
+          />
+        </View>
+        
+        {/* 추천 레시피 섹션 */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>오늘의 추천!</Text>
+          <View style={styles.recipeList}>
+            {recommendedRecipes.map(recipe => (
+              <View key={recipe.id}>
+                {renderRecipeItem({item: recipe})}
+              </View>
+            ))}
           </View>
         </View>
         
-        {loading && (
-          <View style={styles.loadingOverlay}>
-            <ActivityIndicator size="large" color="#FFF" />
-            <Text style={styles.loadingText}>식재료를 분석 중입니다...</Text>
-          </View>
-        )}
-      </View>
-      
-      {/* 하단 버튼 영역 */}
-      <View style={styles.bottomButtons}>
-        <TouchableOpacity style={styles.bottomButton} onPress={takePhoto}>
-          <View style={styles.buttonCircle}>
-            <Text style={styles.buttonIcon}>📷</Text>
-          </View>
-          <Text style={styles.buttonText}>사진 촬영</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.bottomButton} onPress={pickImage}>
-          <View style={styles.buttonCircle}>
-            <Text style={styles.buttonIcon}>🖼️</Text>
-          </View>
-          <Text style={styles.buttonText}>갤러리</Text>
-        </TouchableOpacity>
-      </View>
+        {/* 하단 여백 추가 (탭 바 높이만큼) */}
+        <View style={{ height: 60 }} />
+      </ScrollView>
     </SafeAreaView>
   );
 };
@@ -255,10 +187,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
   },
-  iconImage: {
-    width: 24,
-    height: 24,
+  iconButton: {
     marginLeft: 15,
+  },
+  content: {
+    flex: 1,
   },
   mainCard: {
     backgroundColor: '#FFA500',
@@ -270,7 +203,6 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
-    position: 'relative',
   },
   mainTitle: {
     fontSize: 22,
@@ -279,88 +211,101 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 20,
   },
-  foodIconContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginVertical: 15,
-  },
-  foodIcon: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    backgroundColor: 'rgba(255, 255, 255, 0.3)',
+  searchButton: {
+    flexDirection: 'row',
+    backgroundColor: 'white',
+    padding: 12,
+    borderRadius: 25,
     justifyContent: 'center',
     alignItems: 'center',
-    overflow: 'hidden',
   },
-  placeholderText: {
-    fontSize: 14,
-    color: '#000',
-    textAlign: 'center',
+  searchButtonText: {
+    marginLeft: 8,
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#333',
   },
-  recommendationContainer: {
-    backgroundColor: '#FFF',
-    borderRadius: 15,
-    padding: 15,
-    marginTop: 15,
+  section: {
+    marginBottom: 20,
+    paddingHorizontal: 20,
   },
-  recommendationTitle: {
+  sectionTitle: {
     fontSize: 18,
     fontWeight: 'bold',
+    marginBottom: 15,
+    color: '#333',
+  },
+  ingredientsList: {
     marginBottom: 10,
   },
-  recommendationList: {
-    marginTop: 5,
-  },
-  recommendationItem: {
-    fontSize: 16,
-    marginBottom: 8,
-  },
-  bottomButtons: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    padding: 20,
-  },
-  bottomButton: {
+  ingredientItem: {
     alignItems: 'center',
+    marginRight: 20,
   },
-  buttonCircle: {
+  ingredientIconContainer: {
     width: 60,
     height: 60,
     borderRadius: 30,
-    backgroundColor: '#FFA500',
+    backgroundColor: '#FFF',
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 8,
-    elevation: 3,
+    elevation: 2,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
+    shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.2,
-    shadowRadius: 3,
+    shadowRadius: 2,
   },
-  buttonIcon: {
-    fontSize: 24,
-  },
-  buttonText: {
+  ingredientName: {
     fontSize: 14,
-    fontWeight: 'bold',
+    color: '#333',
   },
-  loadingOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+  recipeList: {
+    marginTop: 5,
+  },
+  recipeCard: {
+    backgroundColor: '#FFF',
+    borderRadius: 12,
+    marginBottom: 15,
+    overflow: 'hidden',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+  },
+  recipePlaceholder: {
+    width: '100%',
+    height: 150,
+    backgroundColor: '#f0f0f0',
     justifyContent: 'center',
     alignItems: 'center',
-    borderRadius: 20,
   },
-  loadingText: {
-    color: '#FFF',
-    marginTop: 10,
+  recipeInfo: {
+    padding: 15,
+  },
+  recipeTitle: {
     fontSize: 16,
     fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 5,
+  },
+  recipeIngredients: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 8,
+  },
+  recipeMetaInfo: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  recipeTime: {
+    fontSize: 14,
+    color: '#FFA500',
+  },
+  recipeDifficulty: {
+    fontSize: 14,
+    color: '#666',
   },
 });
 
