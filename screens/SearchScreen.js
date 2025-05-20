@@ -56,7 +56,7 @@ const vegetableLabels = [
 // YOLO 모델 설정
 const yoloConfig = {
   inputSize: 640,       // YOLOv8 입력 이미지 크기
-  scoreThreshold: 0.25, // 객체 감지 점수 임계값 (25%로 변경)
+  scoreThreshold: 0.15, // 객체 감지 점수 임계값 (15%로 변경)
   iouThreshold: 0.45,   // NMS IoU 임계값
 };
 

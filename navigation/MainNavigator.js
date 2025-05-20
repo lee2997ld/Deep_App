@@ -8,6 +8,8 @@ import { View, Text } from 'react-native';
 // ResultScreen, OnboardingScreen은 이미 구현되어 있다고 가정
 import ResultScreen from '../screens/ResultScreen';
 import OnboardingScreen from '../screens/OnboardingScreen';
+import SearchRecipeScreen from '../screens/SearchRecipeScreen';
+
 
 // 아직 구현되지 않은 화면들을 위한 임시 컴포넌트
 const PlaceholderScreen = ({ route, navigation, screenName }) => (
@@ -71,6 +73,13 @@ export function MainNavigator() {
           name="MainTabs" 
           component={BottomTabNavigator} 
           options={{ headerShown: false }}
+        />
+
+        {/* 레시피 알려주는 화면*/}
+        <Stack.Screen 
+          name="SRecipe" 
+          component={SearchRecipeScreen} 
+          options={{ title: '레시피 추천' }}
         />
         
         {/* 탭 네비게이션 외부에서 접근할 화면들 */}
