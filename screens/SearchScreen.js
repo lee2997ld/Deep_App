@@ -56,7 +56,7 @@ const vegetableLabels = [
 // YOLO 모델 설정
 const yoloConfig = {
   inputSize: 640,       // YOLOv8 입력 이미지 크기
-  scoreThreshold: 0.3,  // 객체 감지 점수 임계값 (낮춰서 더 많은 결과 감지)
+  scoreThreshold: 0.25, // 객체 감지 점수 임계값 (25%로 변경)
   iouThreshold: 0.45,   // NMS IoU 임계값
 };
 
@@ -604,28 +604,38 @@ const SearchScreen = ({ navigation }) => {
     }
   };
   
-  // 테스트용 시뮬레이션 함수
+  // 테스트용 시뮬레이션 함수 - 여러 객체 감지 시뮬레이션
   const simulateProcessing = async (uri) => {
     console.log('시뮬레이션 모드로 처리 중...');
     // 처리 시간을 시뮬레이션 (1-2초)
     await new Promise(resolve => setTimeout(resolve, 1000 + Math.random() * 1000));
     
-    // 랜덤 결과 생성
-    const randomIndex = Math.floor(Math.random() * vegetableLabels.length);
-    const vegetableName = vegetableLabels[randomIndex];
-    const confidence = 0.7 + (Math.random() * 0.29); // 70-99% 신뢰도
+    // 여러 객체 시뮬레이션 (감자와 고구마)
+    const detections = [
+      {
+        box: { x: 10, y: 10, width: 100, height: 100 },
+        class: "감자",
+        classId: 15,
+        confidence: 0.85
+      },
+      {
+        box: { x: 150, y: 50, width: 120, height: 120 },
+        class: "고구마",
+        classId: 16,
+        confidence: 0.78
+      }
+    ];
     
     setLoading(false);
     
-    // 결과 화면으로 이동
+    // 결과 화면으로 이동 (여러 객체 전달)
     navigation.navigate('Result', {
       imageUri: uri,
-      vegetableName,
-      confidence
+      detections
     });
   };
   
-  // YOLOv8 웹 환경 처리 함수
+  // YOLOv8 웹 환경 처리 함수 - 여러 객체 감지 및 25% 이하 필터링
   const processYoloForWeb = async (uri) => {
     try {
       console.log('YOLOv8 웹 환경에서 이미지 처리 중...');
@@ -716,30 +726,16 @@ const SearchScreen = ({ navigation }) => {
         
         console.log('감지된 객체 수:', detections.length);
         
-        // 가장 높은 점수의 감지 결과 선택
-        let bestDetection = null;
-        if (detections.length > 0) {
-          // 점수 기준으로 감지 결과 정렬
-          detections.sort((a, b) => b.confidence - a.confidence);
-          bestDetection = detections[0];
-          console.log('최고 감지 결과:', bestDetection);
-        }
-        
         setLoading(false);
-        if (bestDetection) {
-          // 결과 화면으로 이동
-          const vegetableName = bestDetection.class;
-          const confidence = bestDetection.confidence;
-          
+        if (detections.length > 0) {
+          // 모든 감지 결과를 전달 (최고 점수만 전달하지 않음)
           navigation.navigate('Result', {
             imageUri: uri,
-            vegetableName,
-            confidence,
-            detections: detections // 모든 감지 결과도 전달
+            detections: detections // 모든 감지 결과 전달
           });
         } else {
           // 감지된 객체가 없을 경우
-          Alert.alert('알림', '식재료를 인식할 수 없습니다. 다시 시도해주세요.');
+          Alert.alert('알림', '25% 이상 신뢰도의 식재료를 인식할 수 없습니다. 다시 시도해주세요.');
         }
       } catch (processError) {
         console.error('출력 처리 오류:', processError);
@@ -750,15 +746,19 @@ const SearchScreen = ({ navigation }) => {
           const maxIndex = confidences.indexOf(Math.max(...confidences));
           const maxConfidence = confidences[maxIndex];
           
-          if (maxIndex >= 0 && maxIndex < vegetableLabels.length && maxConfidence > 0.3) {
+          if (maxIndex >= 0 && maxIndex < vegetableLabels.length && maxConfidence > yoloConfig.scoreThreshold) {
             const vegetableName = vegetableLabels[maxIndex];
             const confidence = maxConfidence;
             
             setLoading(false);
             navigation.navigate('Result', {
               imageUri: uri,
-              vegetableName,
-              confidence
+              detections: [{
+                box: { x: 0, y: 0, width: originalWidth, height: originalHeight },
+                class: vegetableName,
+                classId: maxIndex,
+                confidence
+              }]
             });
             return;
           }
@@ -818,7 +818,7 @@ const SearchScreen = ({ navigation }) => {
     };
   };
   
-  // YOLOv8 출력 처리 함수 (개선된 버전)
+  // YOLOv8 출력 처리 함수 (개선된 버전) - 25% 이하 필터링
   const processYoloOutputV2 = (output, outputShape, paddingData, originalSize) => {
     console.log('YOLOv8 출력 처리 중... 출력 형태:', outputShape);
     
@@ -857,7 +857,7 @@ const SearchScreen = ({ navigation }) => {
           }
         }
         
-        // 임계값보다 높은 점수만 처리
+        // 임계값보다 높은 점수만 처리 (25% 이하 제외)
         if (maxClassProb > yoloConfig.scoreThreshold) {
           // 박스 좌표 추출 (x, y = 중심좌표, w, h = 너비/높이)
           const x = output[0 * numAnchors + anchor];
@@ -906,7 +906,7 @@ const SearchScreen = ({ navigation }) => {
           }
         }
         
-        // 임계값보다 높은 점수만 처리
+        // 임계값보다 높은 점수만 처리 (25% 이하 제외)
         if (maxClassProb > yoloConfig.scoreThreshold) {
           // 박스 좌표 추출
           const x = output[0 * numAnchors + anchor];
@@ -946,6 +946,7 @@ const SearchScreen = ({ navigation }) => {
         }
       }
       
+      // 임계값보다 높은 점수만 처리 (25% 이하 제외)
       if (maxProb > yoloConfig.scoreThreshold) {
         // 전체 이미지에 대한 분류 결과 생성
         detections.push({
@@ -1010,7 +1011,7 @@ const SearchScreen = ({ navigation }) => {
     return intersection / (area1 + area2 - intersection);
   };
   
-  // YOLOv8 네이티브 환경 처리 함수
+  // YOLOv8 네이티브 환경 처리 함수 - 여러 객체 감지 및 25% 이하 필터링
   const processYoloForNative = async (uri) => {
     try {
       console.log('YOLOv8 네이티브 환경에서 이미지 처리 중...');
@@ -1060,22 +1061,28 @@ const SearchScreen = ({ navigation }) => {
         const outputShape = results[outputName].dims;
         console.log('출력 형태:', outputShape);
         
-        // YOLOv8 출력 처리 (네이티브 환경용)
-        // 간단히 하기 위해 여기서는 더미 데이터 사용
-        const detections = [];
-        
-        // 랜덤으로 감지 결과 생성 (개발 테스트용)
-        const randomIndex = Math.floor(Math.random() * vegetableLabels.length);
-        const vegetableName = vegetableLabels[randomIndex];
-        const confidence = 0.7 + (Math.random() * 0.29);
+        // 여러 객체 시뮬레이션 (실제 구현에서는 processYoloOutputV2 사용)
+        const detections = [
+          {
+            box: { x: 10, y: 10, width: 100, height: 100 },
+            class: "감자",
+            classId: 15,
+            confidence: 0.85
+          },
+          {
+            box: { x: 150, y: 50, width: 120, height: 120 },
+            class: "고구마",
+            classId: 16,
+            confidence: 0.78
+          }
+        ];
         
         setLoading(false);
         
-        // 결과 화면으로 이동
+        // 결과 화면으로 이동 (여러 객체 전달)
         navigation.navigate('Result', {
           imageUri: uri,
-          vegetableName,
-          confidence
+          detections
         });
       } finally {
         // 임시 파일 정리
@@ -1131,7 +1138,7 @@ const SearchScreen = ({ navigation }) => {
             <Text style={styles.logoText}>DEEP_APP</Text>
           </View>
         </View>
-        <View style={styles.headerIcons}>
+                <View style={styles.headerIcons}>
           <TouchableOpacity style={styles.iconButton}>
             <Ionicons name="person-outline" size={24} color="#333" />
           </TouchableOpacity>
@@ -1290,6 +1297,8 @@ const SearchScreen = ({ navigation }) => {
         <Ionicons name="settings-outline" size={24} color="#fff" />
       </TouchableOpacity>
       
+      {/* 하단 여백 추가 (탭 바 높이만큼) */}
+      <View style={{ height: 60 }} />
     </SafeAreaView>
   );
 };
