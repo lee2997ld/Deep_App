@@ -262,17 +262,6 @@ const ResultScreen = ({ route, navigation }) => {
   // 현재 선택된 채소의 관련 식재료
   const relatedIngredients = selectedVegetable ? 
     getRelatedIngredients(selectedVegetable.class) : [];
-
-  // 레시피 검색 핸들러
-  const handleRecipeSearch = () => {
-    if (selectedVegetable) {
-      // RecipesScreen으로 이동하면서 선택된 식재료 정보 전달
-      navigation.navigate('Recipes', { 
-        ingredient: selectedVegetable.class,
-        recommendedDishes: recommendedDishes
-      });
-    }
-  };
   
   return (
     <SafeAreaView style={styles.safeAreaContainer}>
@@ -396,18 +385,7 @@ const ResultScreen = ({ route, navigation }) => {
           </>
         )}
         
-        {/* 레시피 검색 버튼 - 수정된 부분 
-        {selectedVegetable && (
-          <TouchableOpacity 
-            style={styles.recipeButton}
-            onPress={handleRecipeSearch}
-          >
-            <Ionicons name="restaurant-outline" size={20} color="#fff" style={styles.buttonIcon} />
-            <Text style={styles.buttonText}>레시피 찾기</Text>
-          </TouchableOpacity>
-        )}
-        */}
-        {/* 버튼 */}
+        {/* 다른 식재료 분석하기 버튼 */}
         <TouchableOpacity 
           style={styles.button}
           onPress={() => navigation.navigate('SearchScreen')}
@@ -416,37 +394,25 @@ const ResultScreen = ({ route, navigation }) => {
           <Text style={styles.buttonText}>다른 식재료 분석하기</Text>
         </TouchableOpacity>
 
-        {/* 레시피 버튼 */}
-      {selectedVegetable && (
-        <TouchableOpacity 
-          style={styles.recipeButton}
-          onPress={() => {
-            navigation.navigate('SRecipe', { 
-              ingredient: selectedVegetable.class,
-              recommendedDishes: getRecommendedDishes(selectedVegetable.class)
-            });
-          }}
-        >
-          <Ionicons name="restaurant-outline" size={20} color="#fff" style={styles.buttonIcon} />
-          <Text style={styles.buttonText}>레시피 찾기</Text>
-        </TouchableOpacity>
-      )}
-
-          {/*ResultScreen.js에서 레시피 검색 버튼 부분 */}
-          {selectedVegetable && (
-            <TouchableOpacity 
-              style={styles.recipeButton}
-              onPress={() => {
-                navigation.navigate('SRecipe', { 
-                  ingredient: selectedVegetable.class 
-                });
-              }}
-            >
-              <Ionicons name="restaurant-outline" size={20} color="#fff" style={styles.buttonIcon} />
-              <Text style={styles.buttonText}>레시피 찾기</Text>
-            </TouchableOpacity>
-          )}
-
+        {/* 레시피 찾기 버튼 - 수정된 부분 */}
+        {uniqueDetections.length > 0 && (
+          <TouchableOpacity 
+            style={styles.recipeButton}
+            onPress={() => {
+              // 모든 인식된 재료들을 배열로 전달
+              const allRecognizedIngredients = uniqueDetections.map(det => det.class);
+              
+              console.log('전달할 재료들:', allRecognizedIngredients); // 디버깅용
+              
+              navigation.navigate('SRecipe', {  // SearchRecipe → SRecipe로 변경
+                recognizedIngredients: allRecognizedIngredients
+              });
+            }}
+          >
+            <Ionicons name="restaurant-outline" size={20} color="#fff" style={styles.buttonIcon} />
+            <Text style={styles.buttonText}>레시피 찾기 ({uniqueDetections.length}개 재료)</Text>
+          </TouchableOpacity>
+        )}
 
       </ScrollView>
     </SafeAreaView>
@@ -640,7 +606,7 @@ const styles = StyleSheet.create({
     shadowRadius: 2.22,
     marginHorizontal: 20,
     marginTop: 20,
-    marginBottom: 30,
+    marginBottom: 10,
   },
   recipeButton: {
     backgroundColor: '#FF5722',
@@ -655,7 +621,8 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.22,
     shadowRadius: 2.22,
     marginHorizontal: 20,
-    marginTop: 20,
+    marginTop: 10,
+    marginBottom: 30,
   },
   buttonText: {
     color: 'white',

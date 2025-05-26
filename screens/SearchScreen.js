@@ -113,7 +113,7 @@ const SearchScreen = ({ navigation }) => {
     if (window.ort) {
       try {
         // 모델 파일 URL (public 폴더에 있어야 함)
-        const modelUrl = '/vegetable_classifier.onnx';
+        const modelUrl = '/vegetable_classifier2.onnx';
         console.log('웹 모델 로드 시도:', modelUrl);
         
         try {
@@ -182,7 +182,7 @@ const SearchScreen = ({ navigation }) => {
     
     try {
       // 모델 파일 로드
-      const modelAsset = await Asset.loadAsync(require('../assets/vegetable_classifier.onnx'));
+      const modelAsset = await Asset.loadAsync(require('../assets/vegetable_classifier2.onnx'));
       
       if (!modelAsset || modelAsset.length === 0) {
         throw new Error('모델 애셋을 로드할 수 없습니다.');
@@ -194,7 +194,7 @@ const SearchScreen = ({ navigation }) => {
       }
       
       // 모델 파일 복사 (필요한 경우)
-      const modelDestination = `${FileSystem.documentDirectory}vegetable_classifier.onnx`;
+      const modelDestination = `${FileSystem.documentDirectory}vegetable_classifier2.onnx`;
       await FileSystem.copyAsync({
         from: modelUri,
         to: modelDestination
