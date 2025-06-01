@@ -784,7 +784,7 @@ const SearchRecipeScreen = ({ route, navigation }) => {
       {/* 디버깅 정보 표시 */}
       <View style={styles.debugContainer}>
         <Text style={styles.debugText}>
-          받은 데이터: {JSON.stringify(route.params)}
+          받은 데이터: {recognizedIngredients && recognizedIngredients.length > 0 ? recognizedIngredients.join(', ') : '없음'}
         </Text>
         <Text style={styles.debugText}>
           인식된 재료 수: {recognizedIngredients ? recognizedIngredients.length : 0}
