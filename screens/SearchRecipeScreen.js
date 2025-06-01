@@ -831,14 +831,18 @@ const SearchRecipeScreen = ({ route, navigation }) => {
           contentContainerStyle={styles.listContent}
           ListHeaderComponent={renderSearchResults}
           ListEmptyComponent={
-            <View style={styles.centerContainer}>
-              <Text style={styles.emptyText}>
-                기존 DB에서 인식된 재료로 만들 수 있는 레시피가 없습니다.
-              </Text>
-              <Text style={styles.emptySubText}>
-                다른 재료를 촬영해보세요.
-              </Text>
-            </View>
+            (searchResult?.recommendations && searchResult.recommendations.length > 0)
+              ? null
+              : (
+                <View style={styles.centerContainer}>
+                  <Text style={styles.emptyText}>
+                    기존 DB에서 인식된 재료로 만들 수 있는 레시피가 없습니다.
+                  </Text>
+                  <Text style={styles.emptySubText}>
+                    다른 재료를 촬영해보세요.
+                  </Text>
+                </View>
+              )
           }
         />
       )}
